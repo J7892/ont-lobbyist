@@ -1,0 +1,66 @@
+name: Daily Lobbyist Monitor
+
+on:
+  schedule:
+    # Triggers every single day at precisely 7:00 AM local Toronto time
+    - cron: '0 7 * * *'
+      timezone: 'America/Toronto'
+  workflow_dispatch: # Keeps the manual run button active for manual overrides
+
+jobs:
+  scrape_and_notify:
+    runs-on: ubuntu-latest
+    
+    # Grants the cloud runner permission to push both the CSV ledger and the HTML portal page back to your repo main branch
+    permissions:
+      contents: write
+
+    steps:
+    - name: Check out repository code
+      uses: actions/checkout@v4
+
+    - name: Set up Python Environment
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas playwright pypdf beautifulsoup4
+
+    - name: Install Playwright Chromium Browser
+      run: |
+        playwright install chromium
+
+    - name: Run Daily Tracker and Email Digest
+      env:
+        SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+        SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+      run: |
+        python ontario_lobbyist_scraper.py
+
+    - name: Commit and Push Updated Reference Data & HTML Portal
+      run: |
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "actions@github.com"
+        
+        # FIXED: Explicit separated staging protocol blocks to handle untracked files safely
+        git add ontario_lobbyists_historical.csv
+        git add index.html
+        
+        git commit -m "Automated Sync: Prepended fresh rows to ledger and recompiled data viewer portal" || true
+        git push origin main
+
+    - name: Weekly Keep-Alive Heartbeat
+      run: |
+        # Only run on Sundays (day 7 of the week) to keep git history clean
+        if [ $(date +%u) -eq 7 ]; then
+          date > heartbeat.txt
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+          git add heartbeat.txt
+          git commit -m "Chore: Weekly keep-alive heartbeat commit" || true
+          git push origin main
+        fi

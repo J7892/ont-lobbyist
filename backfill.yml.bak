@@ -1,0 +1,50 @@
+name: Run Lobbyist Backfill
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60 
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas playwright pypdf
+
+    - name: Install Playwright Chromium Browser
+      run: |
+        playwright install chromium
+
+    - name: Run Historical Backfill Script
+      run: |
+        python alberta_backfill.py
+
+    - name: Commit and Push Historical Archive Changes
+      if: always() # CRITICAL: Forces GitHub to save your checkpoint CSV even if the run times out or gets canceled
+      run: |
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "actions@github.com"
+        git add alberta_lobbyists_historical.csv || true
+        git commit -m "Automated Backfill Checkpoint: Syncing processed historical records" || true
+        git push || true
+
+    - name: Upload Diagnostic Debug Artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: backfill-debug-logs
+        path: |
+          debug_screenshot.png
+          debug_page.html
+        if-no-files-found: ignore
